@@ -60,6 +60,8 @@ DEPENDENCIES = ["uart", "uptime"]  # Garder uart ici aussi
 CONF_SUPPORTS = "supports"
 CONF_HORIZONTAL_SWING_SELECT = "horizontal_vane_select"
 CONF_VERTICAL_SWING_SELECT = "vertical_vane_select"
+CONF_SUPPORTS_VERTICAL_VANE_SELECT = "vertical_vane_select"
+CONF_SUPPORTS_HORIZONTAL_VANE_SELECT = "horizontal_vane_select"
 CONF_COMPRESSOR_FREQUENCY_SENSOR = "compressor_frequency_sensor"
 CONF_INPUT_POWER_SENSOR = "input_power_sensor"
 CONF_KWH_SENSOR = "kwh_sensor"
@@ -298,6 +300,8 @@ CONFIG_SCHEMA = (
                     cv.Optional(
                         CONF_SWING_MODE, default=DEFAULT_SWING_MODES
                     ): cv.ensure_list(climate.validate_climate_swing_mode),
+                    cv.Optional(CONF_SUPPORTS_VERTICAL_VANE_SELECT, default=False): cv.boolean,
+                    cv.Optional(CONF_SUPPORTS_HORIZONTAL_VANE_SELECT, default=False): cv.boolean,
                     cv.Optional(CONF_DUAL_SETPOINT, default=False): cv.boolean,
                 }
             ),
@@ -363,6 +367,18 @@ def to_code(config):
 
     cg.add(var.set_remote_temp_timeout(config[CONF_REMOTE_TEMP_TIMEOUT]))
     cg.add(var.set_debounce_delay(config[CONF_DEBOUNCE_DELAY]))
+
+    # --- Auto-create vane selects if enabled in supports but not declared in YAML ---
+    if CONF_SUPPORTS in config:
+        supports = config[CONF_SUPPORTS]
+        if supports.get(CONF_SUPPORTS_VERTICAL_VANE_SELECT, False) and CONF_VERTICAL_SWING_SELECT not in config:
+            auto_vertical_config = {CONF_NAME: "Vertical Vane"}
+            vertical_select_var = yield select.new_select(auto_vertical_config, options=[])
+            cg.add(var.set_vertical_vane_select(vertical_select_var))
+        if supports.get(CONF_SUPPORTS_HORIZONTAL_VANE_SELECT, False) and CONF_HORIZONTAL_SWING_SELECT not in config:
+            auto_horizontal_config = {CONF_NAME: "Horizontal Vane"}
+            horizontal_select_var = yield select.new_select(auto_horizontal_config, options=[])
+            cg.add(var.set_horizontal_vane_select(horizontal_select_var))
 
     # --- Configuration des entités optionnelles (style original) ---
     if CONF_HORIZONTAL_SWING_SELECT in config:

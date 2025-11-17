@@ -9,7 +9,7 @@ spi:
   clk_pin: 17
   mosi_pin: 21
 
-display: 
+display:
   - platform: st7789v
     id: display_tft
     model: Custom
@@ -19,16 +19,16 @@ display:
     offset_height: 2
     offset_width: 1
     backlight_pin: 16
-    cs_pin: 15    
-    dc_pin: 33   #RS/DC
+    cs_pin: 15
+    dc_pin: 33 #RS/DC
     reset_pin: 34
     eightbitcolor: true
     update_interval: 5s
-    
+
     pages:
       - id: page1
-        lambda: |- 
-          
+        lambda: |-
+
           auto color_orange = Color(0xFF4500);  // Rouge-orange chaud
           auto color_blue = Color(0x00008B);    // Bleu sombre
           auto color_yellow = Color(0xFFFF00);  // Jaune
@@ -52,7 +52,7 @@ display:
           it.printf(it.get_width() / 2, it.get_height() / 2 + 32, id(font_data), TextAlign::CENTER, "%.1f °C", id(atoms3_clim).current_temperature);
 
       - id: page2
-        lambda: |-          
+        lambda: |-
           it.rectangle(0, 0, it.get_width(), it.get_height());
           it.print(2, 2, id(font_title), "WiFi:");
           // En-tête pour l'IP
@@ -68,23 +68,21 @@ display:
           // En-tête pour le BSSID
           it.print(2, 86, id(font_header), "BSSID:");
           // Donnée pour le BSSID
-          it.print(2, 98, id(font_data), id(wifi_bssid).state.c_str());        
+          it.print(2, 98, id(font_data), id(wifi_bssid).state.c_str());
           it.printf(2, 112, id(font_header), "signal: %.1f dBm", id(wifi_signal_dbm).state);
 
       - id: page3
         lambda: |-
           it.rectangle(0, 0, it.get_width(), it.get_height());
-          
+
           // Section HA Integration
           it.print(2, 2, id(font_title), "HA Integration:");
           it.strftime(12, 22, id(font_data), "%H:%M:%S", id(ha_time).now());
           it.print(12, 36, id(font_data), "API & MQTT");
           it.printf(16, 48, id(font_data), "Status: %s", id(ha_api_status).state?"OK":"FAILED");
-          
+
 
           // Section Climate UART
           it.print(2, 66, id(font_title), "Climate UART:");
           it.print(2, 87, id(font_data), "Successful cycles:");
           it.printf(12, 100, id(font_data), "%.1f%%", id(complete_cycles_percent).state);
-
-    
