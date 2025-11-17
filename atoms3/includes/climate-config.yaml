@@ -5,9 +5,9 @@
 #   - source: github://echavet/MitsubishiCN105ESPHome
 #     refresh: 0s
 external_components:
- - source:
-     type: local
-     path: ../components 
+  - source:
+      type: local
+      path: ../components
 
 uart:
   id: HP_UART
@@ -15,7 +15,6 @@ uart:
   tx_pin: GPIO1
   rx_pin: GPIO2
   #debug:
-    
 
 climate:
   - platform: cn105
