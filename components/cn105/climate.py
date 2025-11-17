@@ -378,14 +378,16 @@ def to_code(config):
         if supports.get(CONF_SUPPORTS_HORIZONTAL_VANE_SELECT, False) and CONF_HORIZONTAL_SWING_SELECT not in config:
             auto_horizontal_config = {CONF_NAME: "Horizontal Vane"}
             horizontal_select_var = yield select.new_select(auto_horizontal_config, options=[])
-            cg.add(var.set_horizontal_vane_select(horizontal_select_var))
+            include_airflow = CONF_AIRFLOW_CONTROL_SELECT in config
+            cg.add(var.set_horizontal_vane_select(horizontal_select_var, include_airflow))
 
     # --- Configuration des entités optionnelles (style original) ---
     if CONF_HORIZONTAL_SWING_SELECT in config:
         conf_item = config[CONF_HORIZONTAL_SWING_SELECT]
         # new_select s'occupe de l'enregistrement. options=[] est important.
         swing_select_var = yield select.new_select(conf_item, options=[])
-        cg.add(var.set_horizontal_vane_select(swing_select_var))
+        include_airflow = CONF_AIRFLOW_CONTROL_SELECT in config
+        cg.add(var.set_horizontal_vane_select(swing_select_var, include_airflow))
 
     if CONF_VERTICAL_SWING_SELECT in config:
         conf_item = config[CONF_VERTICAL_SWING_SELECT]

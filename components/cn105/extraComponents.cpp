@@ -1,4 +1,5 @@
 #include "cn105.h"
+#include <algorithm>
 
 using namespace esphome;
 
@@ -34,14 +35,18 @@ void CN105Climate::set_vertical_vane_select(
 }
 
 void CN105Climate::set_horizontal_vane_select(
-    VaneOrientationSelect* horizontal_vane_select) {
+    VaneOrientationSelect* horizontal_vane_select, bool include_airflow_control) {
     this->horizontal_vane_select_ = horizontal_vane_select;
 
     // builds option list from SwiCago wideVaneMap
-    this->horizontal_vane_select_->traits.set_options({
-        WIDEVANE_MAP[0], WIDEVANE_MAP[1], WIDEVANE_MAP[2], WIDEVANE_MAP[3],
-        WIDEVANE_MAP[4], WIDEVANE_MAP[5], WIDEVANE_MAP[6], WIDEVANE_MAP[7]
-        });
+    std::vector<std::string> wideVaneOptions(std::begin(WIDEVANE_MAP), std::end(WIDEVANE_MAP));
+    if (!include_airflow_control) {
+        wideVaneOptions.erase(
+            std::remove_if(wideVaneOptions.begin(), wideVaneOptions.end(),
+                [](const std::string& option) { return option == "AIRFLOW CONTROL"; }),
+            wideVaneOptions.end());
+    }
+    this->horizontal_vane_select_->traits.set_options(wideVaneOptions);
 
     this->horizontal_vane_select_->setCallbackFunction([this](const char* setting) {
         ESP_LOGD("EVT", "wideVane.control() -> Demande un chgt de réglage de la wideVane: %s", setting);

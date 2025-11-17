@@ -42,7 +42,7 @@ namespace esphome {
         CN105Climate(uart::UARTComponent* hw_serial);
 
         void set_vertical_vane_select(VaneOrientationSelect* vertical_vane_select);
-        void set_horizontal_vane_select(VaneOrientationSelect* horizontal_vane_select);
+        void set_horizontal_vane_select(VaneOrientationSelect* horizontal_vane_select, bool include_airflow_control = true);
         void set_airflow_control_select(VaneOrientationSelect* airflow_control_select);
         void set_compressor_frequency_sensor(esphome::sensor::Sensor* compressor_frequency_sensor);
         void set_input_power_sensor(esphome::sensor::Sensor* input_power_sensor);
