@@ -60,7 +60,41 @@ bool CN105Climate::processModeChange(const esphome::climate::ClimateCall& call) 
     }
 
     ESP_LOGD("control", "Mode change asked");
+    climate::ClimateMode previousMode = this->mode;
     this->mode = *call.get_mode();
+
+    // Handle dual setpoint transitions when dual_setpoint is enabled
+    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
+        if (previousMode == climate::CLIMATE_MODE_HEAT_COOL && this->mode != climate::CLIMATE_MODE_HEAT_COOL) {
+            // Leaving HEAT_COOL: transfer appropriate setpoint to target_temperature
+            float newTarget;
+            if (this->mode == climate::CLIMATE_MODE_HEAT) {
+                newTarget = this->getTargetTemperatureLow();
+            } else if (this->mode == climate::CLIMATE_MODE_COOL || this->mode == climate::CLIMATE_MODE_DRY) {
+                newTarget = this->getTargetTemperatureHigh();
+            } else {
+                // For other modes (FAN_ONLY, OFF), use median
+                newTarget = (this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f;
+            }
+            if (!std::isnan(newTarget)) {
+                this->setTargetTemperature(newTarget);
+            }
+            // Clear dual setpoints so HA shows single slider
+            this->target_temperature_low = NAN;
+            this->target_temperature_high = NAN;
+            ESP_LOGD("control", "Left HEAT_COOL: single setpoint %.1f, dual setpoints cleared", this->getTargetTemperature());
+        } else if (previousMode != climate::CLIMATE_MODE_HEAT_COOL && this->mode == climate::CLIMATE_MODE_HEAT_COOL) {
+            // Entering HEAT_COOL: initialize dual setpoints from current target_temperature
+            float currentTarget = this->getTargetTemperature();
+            if (!std::isnan(currentTarget)) {
+                this->setTargetTemperatureLow(currentTarget - 2.0f);
+                this->setTargetTemperatureHigh(currentTarget + 2.0f);
+                ESP_LOGD("control", "Entering HEAT_COOL: init dual setpoints [%.1f - %.1f] from target %.1f",
+                    this->getTargetTemperatureLow(), this->getTargetTemperatureHigh(), currentTarget);
+            }
+        }
+    }
+
     this->controlMode();
     this->controlTemperature();
     return true;
@@ -182,20 +216,23 @@ bool CN105Climate::processTemperatureChange(const esphome::climate::ClimateCall&
         temp_single = this->fahrenheitSupport_.normalizeUiTemperatureToHeatpumpTemperature(*call.get_target_temperature());
     }
 
-    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
-        ESP_LOGD("control", "Processing with dual setpoint support...");
+    // Dual setpoint UI is only active in HEAT_COOL mode
+    // Other modes use single setpoint (HA shows 1 slider because low/high are NAN)
+    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE) &&
+        this->mode == climate::CLIMATE_MODE_HEAT_COOL) {
+        ESP_LOGD("control", "Processing with dual setpoint support (HEAT_COOL mode)...");
         if (call.get_target_temperature_low().has_value() && call.get_target_temperature_high().has_value()) {
             this->handleDualSetpointBoth(temp_low, temp_high);
         } else if (call.get_target_temperature_low().has_value()) {
             this->handleDualSetpointLowOnly(temp_low);
         } else if (call.get_target_temperature_high().has_value()) {
             this->handleDualSetpointHighOnly(temp_high);
-        } else if (call.get_target_temperature().has_value() &&
-            (this->mode == climate::CLIMATE_MODE_HEAT_COOL || this->mode == climate::CLIMATE_MODE_DRY)) {
+        } else if (call.get_target_temperature().has_value()) {
             this->handleSingleTargetInAutoOrDry(temp_single);
         }
     } else {
-        ESP_LOGD("control", "Processing without dual setpoint support...");
+        // Single setpoint mode (either dual_setpoint disabled, or not in HEAT_COOL mode)
+        ESP_LOGD("control", "Processing with single setpoint...");
         if (call.get_target_temperature().has_value()) {
             this->setTargetTemperature(temp_single);
             ESP_LOGI("control", "Setting heatpump setpoint : %.1f", this->getTargetTemperature());
@@ -352,65 +389,34 @@ void CN105Climate::controlFan() {
 void CN105Climate::controlTemperature() {
     float setting;
 
-
-    // Utiliser la logique appropriée selon les traits
-    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
+    // Dual setpoint is only active in HEAT_COOL mode
+    // Other modes use single target_temperature
+    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE) &&
+        this->mode == climate::CLIMATE_MODE_HEAT_COOL) {
         this->sanitizeDualSetpoints();
-        // Dual setpoint : choisir la bonne consigne selon le mode
-        switch (this->mode) {
-        case climate::CLIMATE_MODE_HEAT_COOL:
-            // HEAT_COOL mode (mapped from Mitsubishi AUTO) uses dual setpoints
-            if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
-                // Only initialize from PAC temp if setpoints are not yet defined
-                bool lowDefined = !std::isnan(this->getTargetTemperatureLow());
-                bool highDefined = !std::isnan(this->getTargetTemperatureHigh());
 
-                if (!lowDefined || !highDefined) {
-                    // Initialize missing setpoints from PAC temperature
-                    if ((!std::isnan(currentSettings.temperature)) && (currentSettings.temperature > 0)) {
-                        if (!lowDefined) this->setTargetTemperatureLow(currentSettings.temperature - 2.0f);
-                        if (!highDefined) this->setTargetTemperatureHigh(currentSettings.temperature + 2.0f);
-                        ESP_LOGI("control", "Initializing HEAT_COOL mode temps from current PAC temp: %.1f -> [%.1f - %.1f]",
-                            currentSettings.temperature, this->getTargetTemperatureLow(), this->getTargetTemperatureHigh());
-                    }
-                }
-                // Use the median of the dual setpoints for the PAC command
-                setting = (this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f;
-                ESP_LOGD("control", "HEAT_COOL mode : using median of dual setpoints: %.1f", setting);
-            } else {
-                setting = this->getTargetTemperature();
+        // HEAT_COOL mode: uses dual setpoints
+        // Only initialize from PAC temp if setpoints are not yet defined
+        bool lowDefined = !std::isnan(this->getTargetTemperatureLow());
+        bool highDefined = !std::isnan(this->getTargetTemperatureHigh());
+
+        if (!lowDefined || !highDefined) {
+            // Initialize missing setpoints from PAC temperature
+            if ((!std::isnan(currentSettings.temperature)) && (currentSettings.temperature > 0)) {
+                if (!lowDefined) this->setTargetTemperatureLow(currentSettings.temperature - 2.0f);
+                if (!highDefined) this->setTargetTemperatureHigh(currentSettings.temperature + 2.0f);
+                ESP_LOGI("control", "Initializing HEAT_COOL mode temps from current PAC temp: %.1f -> [%.1f - %.1f]",
+                    currentSettings.temperature, this->getTargetTemperatureLow(), this->getTargetTemperatureHigh());
             }
-
-            break;
-
-        case climate::CLIMATE_MODE_HEAT:
-            // Mode HEAT : using low target temperature
-            setting = this->getTargetTemperatureLow();
-            ESP_LOGD("control", "HEAT mode : getting temperature low:%1.f", this->getTargetTemperatureLow());
-            break;
-        case climate::CLIMATE_MODE_COOL:
-            // Mode COOL : using high target temperature
-            setting = this->getTargetTemperatureHigh();
-            ESP_LOGD("control", "COOL mode : getting temperature high:%1.f", this->getTargetTemperatureHigh());
-            break;
-        case climate::CLIMATE_MODE_DRY:
-            // Mode DRY : using high target temperature
-            setting = this->getTargetTemperatureHigh();
-            ESP_LOGD("control", "COOL mode : getting temperature high:%1.f", this->getTargetTemperatureHigh());
-            break;
-        default:
-            // Other modes : use median temperature
-            if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
-                setting = (this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f;
-            } else {
-                setting = this->getTargetTemperature();
-            }
-            ESP_LOGD("control", "DEFAULT mode : getting temperature median:%1.f", setting);
-            break;
         }
+        // Use the median of the dual setpoints for the PAC command
+        setting = (this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f;
+        ESP_LOGD("control", "HEAT_COOL mode : using median of dual setpoints: %.1f", setting);
     } else {
-        // Single setpoint : utiliser target_temperature
+        // All other modes (HEAT, COOL, DRY, FAN_ONLY, OFF) or when dual_setpoint is disabled
+        // Use single target_temperature
         setting = this->getTargetTemperature();
+        ESP_LOGD("control", "Mode %d: using single setpoint: %.1f", static_cast<int>(this->mode), setting);
     }
 
     setting = this->calculateTemperatureSetting(setting);

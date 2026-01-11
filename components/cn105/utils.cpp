@@ -60,23 +60,9 @@ float CN105Climate::calculateTemperatureSetting(float setting) {
 
 void CN105Climate::updateTargetTemperaturesFromSettings(float temperature) {
     if (this->traits().has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
-
-        if (this->mode == climate::CLIMATE_MODE_HEAT) {
-            this->setTargetTemperatureLow(temperature);
-            if (std::isnan(this->getTargetTemperatureHigh())) {
-                this->setTargetTemperatureHigh(temperature);
-            }
-        } else if (this->mode == climate::CLIMATE_MODE_COOL) {
-            this->setTargetTemperatureHigh(temperature);
-            if (std::isnan(this->getTargetTemperatureLow())) {
-                this->setTargetTemperatureLow(temperature);
-            }
-        } else if (this->mode == climate::CLIMATE_MODE_DRY) {
-            this->setTargetTemperatureHigh(temperature);
-            if (std::isnan(this->getTargetTemperatureLow())) {
-                this->setTargetTemperatureLow(temperature);
-            }
-        } else if (this->mode == climate::CLIMATE_MODE_HEAT_COOL) {
+        // Dual setpoint is only active in HEAT_COOL mode
+        // Other modes use single setpoint (low/high are NAN for HA to show 1 slider)
+        if (this->mode == climate::CLIMATE_MODE_HEAT_COOL) {
             // En HEAT_COOL (mapped from Mitsubishi AUTO): si les deux bornes existent déjà, ne pas recentrer
             bool lowDefined = !std::isnan(this->getTargetTemperatureLow());
             bool highDefined = !std::isnan(this->getTargetTemperatureHigh());
@@ -104,22 +90,13 @@ void CN105Climate::updateTargetTemperaturesFromSettings(float temperature) {
             this->currentSettings.dual_low_target = this->getTargetTemperatureLow();
             this->currentSettings.dual_high_target = this->getTargetTemperatureHigh();
         } else {
-
-            if (std::isnan(this->getTargetTemperatureLow())) {
-                this->setTargetTemperatureLow(temperature);
-            }
-            if (std::isnan(this->getTargetTemperatureHigh())) {
-                this->setTargetTemperatureHigh(temperature);
-            }
-
-            float theoricalSetPoint = this->calculateTemperatureSetting((this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f);
-
-            if (theoricalSetPoint != temperature) {
-                float delta = (this->getTargetTemperatureHigh() - this->getTargetTemperatureLow()) / 2.0f;
-                this->setTargetTemperatureLow(theoricalSetPoint - delta);
-                this->setTargetTemperatureHigh(theoricalSetPoint + delta);
-            }
-
+            // Non-HEAT_COOL modes: use single setpoint, clear dual setpoints
+            // NAN values tell HA (via ESPHome API) to show single slider
+            this->target_temperature_low = NAN;
+            this->target_temperature_high = NAN;
+            this->setTargetTemperature(temperature);
+            ESP_LOGD(LOG_SETTINGS_TAG, "Mode %d: SINGLE SETPOINT %.1f (dual setpoints cleared)",
+                static_cast<int>(this->mode), temperature);
         }
     } else {
         ESP_LOGD(LOG_SETTINGS_TAG, "SINGLE SETPOINT %.1f",
@@ -157,16 +134,10 @@ void CN105Climate::debugSettings(const char* settingName, wantedHeatpumpSettings
 }
 
 float CN105Climate::getTargetTemperatureInCurrentMode() {
-    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
-        if (this->mode == climate::CLIMATE_MODE_HEAT) {
-            return this->getTargetTemperatureLow();
-        } else if (this->mode == climate::CLIMATE_MODE_COOL) {
-            return this->getTargetTemperatureHigh();
-        } else if (this->mode == climate::CLIMATE_MODE_DRY) {
-            return this->getTargetTemperatureHigh();
-        } else {
-            return (this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f;
-        }
+    // Dual setpoint is only active in HEAT_COOL mode
+    if (this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE) &&
+        this->mode == climate::CLIMATE_MODE_HEAT_COOL) {
+        return (this->getTargetTemperatureLow() + this->getTargetTemperatureHigh()) / 2.0f;
     } else {
         return this->getTargetTemperature();
     }
@@ -206,6 +177,11 @@ void CN105Climate::setCurrentTemperature(float temperature) {
 
 void CN105Climate::sanitizeDualSetpoints() {
     if (!this->traits_.has_feature_flags(climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE)) {
+        return;
+    }
+    // Only sanitize dual setpoints in HEAT_COOL mode
+    // Other modes use single setpoint (low/high are NAN)
+    if (this->mode != climate::CLIMATE_MODE_HEAT_COOL) {
         return;
     }
     ESP_LOGD(LOG_DUAL_SP_TAG, "sanitizing dual setpoints...");
