@@ -395,7 +395,7 @@ def to_code(config):
         yaml_dual = supports.get(CONF_DUAL_SETPOINT, False)
         # Utilise directement la constante C++ via une RawExpression pour éviter d'aller la chercher côté Python
         dual_flag = cg.RawExpression(
-            "climate::CLIMATE_REQUIRES_TWO_POINT_TARGET_TEMPERATURE"
+            "climate::CLIMATE_SUPPORTS_TWO_POINT_TARGET_TEMPERATURE"
         )
         if yaml_dual:
             # Active le flag de dual setpoint via l'API de feature flags (remplace l'appel déprécié)
@@ -538,8 +538,14 @@ def to_code(config):
     # The enum validator returns the integer value from FAHRENHEIT_MODES dict
     fahrenheit_mode = config.get(CONF_FAHRENHEIT_SUPPORT_MODE)
     # Ensure it's an integer (enum validator should already return int, but be explicit)
-    fahrenheit_value = int(fahrenheit_mode) if isinstance(fahrenheit_mode, int) else FAHRENHEIT_MODES.get(str(fahrenheit_mode).lower(), 0)
-    mode_enum = cg.RawExpression(f"static_cast<esphome::FahrenheitMode>({fahrenheit_value})")
+    fahrenheit_value = (
+        int(fahrenheit_mode)
+        if isinstance(fahrenheit_mode, int)
+        else FAHRENHEIT_MODES.get(str(fahrenheit_mode).lower(), 0)
+    )
+    mode_enum = cg.RawExpression(
+        f"static_cast<esphome::FahrenheitMode>({fahrenheit_value})"
+    )
     cg.add(var.set_use_fahrenheit_support_mode(mode_enum))
 
     # --- TRAITEMENT POUR STAGE_SENSOR AVEC LA NOUVELLE OPTION ---

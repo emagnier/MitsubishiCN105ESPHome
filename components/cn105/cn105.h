@@ -434,9 +434,17 @@ namespace esphome {
         // Ensure dual setpoints are valid (no NaN, enforce spread in AUTO)
         void sanitizeDualSetpoints();
 
-        // Anti-rebond UI: mémorise le dernier côté modifié et l'instant
+        // Synchronize temperature setpoints when switching between single/dual modes
+        void handleModeTransition(climate::ClimateMode old_mode, climate::ClimateMode new_mode);
+
+        // UI anti-bounce: track last modified side and timestamp
         uint32_t last_dual_setpoint_change_ms_ = 0;
         char last_dual_setpoint_side_ = 'N'; // 'L' (low), 'H' (high), 'N' (none)
+
+        // Internal storage for dual setpoints (preserved across mode changes)
+        // These values are kept even when switching to single-setpoint modes (HEAT/COOL)
+        float internal_target_low_{NAN};
+        float internal_target_high_{NAN};
 
         // Gestion sûre d'un paquet différé à écrire pour éviter la capture d'un buffer de pile
         void try_write_pending_packet();
