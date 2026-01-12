@@ -554,14 +554,20 @@ void CN105Climate::updateAction() {
                 // In deadband zone
                 if (std::isnan(current)) {
                     this->action = climate::CLIMATE_ACTION_IDLE;
-                } else if (this->currentStatus.operating) {
-                    // Heat pump is still operating - determine action based on position in deadband
-                    float midpoint = (low + high) / 2.0f;
-                    this->action = (current <= midpoint)
-                        ? climate::CLIMATE_ACTION_HEATING
-                        : climate::CLIMATE_ACTION_COOLING;
                 } else {
-                    this->action = climate::CLIMATE_ACTION_IDLE;
+                    // Stage reflects actual fan/compressor activity
+                    bool stage_is_idle = this->currentSettings.stage != nullptr &&
+                        strcmp(this->currentSettings.stage, STAGE_MAP[0 /*IDLE*/]) == 0;
+
+                    if (stage_is_idle || !this->currentStatus.operating) {
+                        this->action = climate::CLIMATE_ACTION_IDLE;
+                    } else {
+                        // Determine displayed action based on position relative to midpoint
+                        float midpoint = (low + high) / 2.0f;
+                        this->action = (current <= midpoint)
+                            ? climate::CLIMATE_ACTION_HEATING
+                            : climate::CLIMATE_ACTION_COOLING;
+                    }
                 }
             }
         } else if (this->traits().supports_mode(climate::CLIMATE_MODE_COOL)) {
